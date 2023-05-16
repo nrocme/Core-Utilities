@@ -11,7 +11,7 @@
 #include <sys/time.h>
 #include <argp.h>
 #include <math.h>
-void printHelp();
+
 // This program is are recreation of touch. a linux core util that updates the edit time of a given file
 // usage ./a.out [OPTION]... FILE...
 
@@ -152,8 +152,4 @@ int main(int argc, char **argv) {
     }
 
     return(0);
-}
-
-void printHelp() {
-    printf("Help Page for Touch\n");
 }
