@@ -5,24 +5,28 @@
 #include <stdlib.h>
 #include <string.h>
 #include <argp.h>
+#include <sys/stat.h>
+#define _FILE_OFFSET_BITS 64
 
 long int findSize(char fileName[]);
 
 // program documentating
 const char *argp_program_version = "cp 1.0";
 const char *argp_program_bug_address = "<bug-gnu-utils@gnu.org>";
-static char doc[] = "This program copes contents SOURCE to DEST";
+static char doc[] = "This program copies contents SOURCE to DEST";
 static char args_doc[] = "SOURCE DEST";
 
 // defining options
 static struct argp_option options[]= {
     {"interactive", 'i', 0, 0, "prompt before overwriting data"},
+    {"update", 'u', 0, 0, "copy only when the SOURCE file is newer than DEST or if DEST does not exist"},
     {"no-clobber", 'n', 0, 0, "do not overwrite an existing file (overrides a previous -i option)"},
+    {"link", 'l', 0, 0, "hard links files instead of copying"},
     {0}
 };
 
 struct arguments {
-    int interactive, noclobber;
+    int interactive, noClobber, update, hardLink;
     char *pathSRC, *pathDEST;
 };
 
@@ -35,10 +39,16 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state) {
     switch (key) {
         case 'i':
             arguments->interactive = 1;
-            arguments->noclobber = 1;
+            arguments->noClobber = 1;
+            break;
+        case 'l':
+            arguments->hardLink = 1;
+            break;
+        case 'u':
+            arguments->update = 1;
             break;
         case 'n':
-            arguments->noclobber = 1;
+            arguments->noClobber = 1;
             break;
         case ARGP_KEY_ARG:
             if (state->arg_num >= 2)
@@ -85,39 +95,51 @@ long int findSize(char fileName[]) {
 int main(int argc, char *argv[]) {
 
     struct arguments arguments;
+    struct stat dstStats, srcStats;
     char *arg;
-
+    int bytesRead = 0;
     /* Default values. */
     arguments.interactive = 0;
-    arguments.noclobber = 0;
+    arguments.noClobber = 0;
+    arguments.update = 0;
+    arguments.hardLink = 0;
     /* Parse our arguments; every option seen by parse_opt will
         be reflected in arguments. */
     argp_parse (&argp, argc, argv, 0, 0, &arguments);
     // gets path from the argument after ./a.out so to use cp you would need to ./a.out <pathname of copy> <where to put the copy>
-    int bytesRead = 0;
-    
     //call findsize to get the required size of buffer
     long int size = 0;
     size = findSize(arguments.pathSRC);
     void *buffer = malloc(size);
     //File descriptors for both the SRC and the DEST file DEST is created upon command use.
     int SRC = open(arguments.pathSRC, O_RDONLY);
+    int fileExists = !access(arguments.pathDEST, F_OK);
+    if(arguments.hardLink) {
+        if(fileExists) unlink(arguments.pathDEST);
+        link(arguments.pathSRC, arguments.pathDEST);
+        exit(EXIT_SUCCESS);
+    }
+    if(arguments.noClobber && fileExists) exit(EXIT_FAILURE);
     int DEST = open(arguments.pathDEST, O_WRONLY | O_CREAT , 00666);
+    if(arguments.update && fileExists) {
+        fstat(SRC, &dstStats);
+        fstat(DEST, &srcStats);
+        if(dstStats.st_mtime >= srcStats.st_mtime) exit(EXIT_FAILURE);
+    }
 
     // hanlder interactive option
-    if(arguments.noclobber && findSize(arguments.pathDEST) >= 1) {
+    if(arguments.interactive && findSize(arguments.pathDEST) >= 1) {
         char input;
-        if(arguments.interactive) {
-            printf("DEST file is about to be overwritten.\nPlease type 'y' if so and 'n' to cancel...\n");
-            scanf("%s", &input);
-            if((int)input != 'y') {
-                printf("DEST contains characters and will not be overwritten\n");
-                exit(EXIT_FAILURE);
-            }
-        } else {
+        printf("DEST file is about to be overwritten.\nPlease type 'y' if so and 'n' to cancel...\n");
+        scanf("%s", &input);
+        if((int)input != 'y') {
             printf("DEST contains characters and will not be overwritten\n");
             exit(EXIT_FAILURE);
         }
+    }
+    if(arguments.hardLink) {
+        link(arguments.pathSRC, arguments.pathDEST);
+        exit(EXIT_SUCCESS);
     }
 
     if (SRC == -1 || DEST == -1) {
