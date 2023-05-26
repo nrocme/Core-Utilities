@@ -22,11 +22,13 @@ static struct argp_option options[]= {
     {"update", 'u', 0, 0, "copy only when the SOURCE file is newer than DEST or if DEST does not exist"},
     {"no-clobber", 'n', 0, 0, "do not overwrite an existing file (overrides a previous -i option)"},
     {"link", 'l', 0, 0, "hard links files instead of copying"},
+    {"symbolic-link", 's', 0, 0, "make symbolic links files instead of copying"},
+    {"target-directory", 't', "DIRECTORY", 0, "copy all SOURCE arguments into DIRECTORY"},
     {0}
 };
 
 struct arguments {
-    int interactive, noClobber, update, hardLink;
+    int interactive, noClobber, update, hardLink, symbolicLink;
     char *pathSRC, *pathDEST;
 };
 
@@ -43,6 +45,9 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state) {
             break;
         case 'l':
             arguments->hardLink = 1;
+            break;
+        case 's':
+            arguments->symbolicLink = 1;
             break;
         case 'u':
             arguments->update = 1;
@@ -103,6 +108,7 @@ int main(int argc, char *argv[]) {
     arguments.noClobber = 0;
     arguments.update = 0;
     arguments.hardLink = 0;
+    arguments.symbolicLink = 0;
     /* Parse our arguments; every option seen by parse_opt will
         be reflected in arguments. */
     argp_parse (&argp, argc, argv, 0, 0, &arguments);
@@ -114,12 +120,17 @@ int main(int argc, char *argv[]) {
     //File descriptors for both the SRC and the DEST file DEST is created upon command use.
     int SRC = open(arguments.pathSRC, O_RDONLY);
     int fileExists = !access(arguments.pathDEST, F_OK);
-    if(arguments.hardLink) {
+    if(arguments.noClobber && fileExists && !arguments.interactive) exit(EXIT_FAILURE);
+    if(arguments.symbolicLink || arguments.hardLink) {
+        if(arguments.symbolicLink && arguments.hardLink) {
+            printf("cp: cannot make both hard and symbolic links\n");
+            exit(EXIT_FAILURE);
+        }
         if(fileExists) unlink(arguments.pathDEST);
-        link(arguments.pathSRC, arguments.pathDEST);
+        if(arguments.symbolicLink) symlink(arguments.pathSRC, arguments.pathDEST);
+        if(arguments.hardLink) link(arguments.pathSRC, arguments.pathDEST);
         exit(EXIT_SUCCESS);
     }
-    if(arguments.noClobber && fileExists) exit(EXIT_FAILURE);
     int DEST = open(arguments.pathDEST, O_WRONLY | O_CREAT , 00666);
     if(arguments.update && fileExists) {
         fstat(SRC, &dstStats);
